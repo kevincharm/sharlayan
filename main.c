@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/ptrace.h>
 #include <mach/mach.h>
@@ -21,46 +22,57 @@
 
 /**
  *  modified from https://gist.github.com/benphelps/7106366
+ *  apparently the chatlog base address is at 0x0107E3F0 (pre-SB?)
+ *  chat pointer is then + 52
  *  @returns mem addr offset of chatlog
  */
+#define MEMSCAN_BUFFER_SIZE (0x1000)
 int get_chatlog_offset(mach_port_t task) {
-    int ptr;
-
     static uint16_t MEM_PATTERN_CHATLOG[] = {0xe8, 0xffff, 0xffff, 0xffff, 0xffff, 0x85, 0xc0,
         0x74, 0x0e, 0x48, 0x8b, 0x0d, 0xffff, 0xffff, 0xffff, 0xffff, 0x33, 0xd2, 0xe8, 0xffff,
         0xffff, 0xffff, 0xffff,0x48, 0x8b, 0x0d};
     int sigsize = sizeof(MEM_PATTERN_CHATLOG)/sizeof(MEM_PATTERN_CHATLOG[0]);
 
-    int size = 0xffff3000; // size of memory to scan
+    unsigned int size = 0x01000000; // size of memory to scan
 
-    unsigned int buffer_size = 0x100000;
     int bytes_read = 0;
     uint32_t sz;
+    printf("Getting chatlog memory offset...\n");
     while (bytes_read <= size) {
-        uint8_t buffer[buffer_size];
-        unsigned int address = bytes_read;
-        pointer_t buffer_pointer;
-        vm_read(task, address, buffer_size, &buffer_pointer, &sz);
-        memcpy(buffer, (const void *)buffer_pointer, sz);
+        static uint8_t buffer[MEMSCAN_BUFFER_SIZE];
+        unsigned int address = 0x0107E3F0+bytes_read;
+        pointer_t buf_ptr;
+
+        // vm_read
+        //printf("\nStarting vm_read...\n");
+        kern_return_t kret = vm_read(task, address, MEMSCAN_BUFFER_SIZE, &buf_ptr, &sz);
+        KERN_ERR_CHECK(kret, "vm_read");
+        if (kret != KERN_SUCCESS) return -1;
+
+        //printf("Finished vm_read. buffer pointer: %d\n", buf_ptr);
+        memcpy(buffer, (const void *)buf_ptr, MEMSCAN_BUFFER_SIZE); // why is this segfaulting?
+        //printf("Finished memcpy.\n");
         unsigned int bufpos = 0;
-        while (bufpos <= buffer_size) {
+        //printf("Reading 1MB memory at: %x\n", address);
+        while (bufpos <= MEMSCAN_BUFFER_SIZE) {
             unsigned int sigstart = bufpos;
             unsigned int sigpos = 0;
             // parse bytes
             while (buffer[sigstart+sigpos] == (MEM_PATTERN_CHATLOG[sigpos] & 0xff)
-                || buffer[sigstart+sigpos] == 0xffff) {
+                || MEM_PATTERN_CHATLOG[sigpos] == 0xffff) {
+                printf("\x1B[32;1m%x\x1B[0m ", buffer[sigstart+sigpos]);
                 sigpos++;
                 if (sigpos == sigsize) {
-                    return (int) bytes_read + bufpos;
+                    return (int)(bytes_read+bufpos);
                 }
-
             }
+            printf("\33[2K\r\x1B[33;1mSearching...\x1B[0m");
             bufpos++;
         }
-        bytes_read+=buffer_size;
+        bytes_read+=MEMSCAN_BUFFER_SIZE;
     }
 
-    return ptr;
+    return -1;
 }
 
 /**
@@ -107,7 +119,7 @@ int main() {
 
     int chatlog_addr = get_chatlog_offset(task);
 
-    printf("FFXIV (%d) is running %d threads.\n", pid_ffxiv, thread_count);
+    printf("\nFFXIV (%d) is running %d threads.\n", pid_ffxiv, thread_count);
     printf("  -> CHATLOG at %d\n", chatlog_addr);
 
     return 0;
