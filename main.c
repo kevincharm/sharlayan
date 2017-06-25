@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/ptrace.h>
 #include <mach/mach.h>
+#include <mach/mach_vm.h>
 #include <errno.h>
 #include <signal.h>
 
@@ -26,34 +27,38 @@
  *  chat pointer is then + 52
  *  @returns mem addr offset of chatlog
  */
-#define MEMSCAN_BUFFER_SIZE (0x100000)
+#define MEMSCAN_BUFFER_SIZE         (0x1000000)
+#define MEMSCAN_PATTERN_WILDCARD    '*'
 int get_chatlog_offset(mach_port_t task) {
-    /*static uint16_t MEM_PATTERN_CHATLOG[] = {0xe8, 0xffff, 0xffff, 0xffff, 0xffff, 0x85, 0xc0,
-        0x74, 0x0e, 0x48, 0x8b, 0x0d, 0xffff, 0xffff, 0xffff, 0xffff, 0x33, 0xd2, 0xe8, 0xffff,
-        0xffff, 0xffff, 0xffff,0x48, 0x8b, 0x0d};*/
-    static uint8_t MEM_PATTERN_CHATLOG[] = {0x3A, 0x3A, 0x57, 0x65, 0x6C, 0x63, 0x6F, 0x6D,
-                                            0x65, 0x20, 0x74, 0x6F, 0x20, 0x46, 0x49, 0x4E,
-                                            0x41, 0x4C, 0x20, 0x46, 0x41, 0x4E, 0x54, 0x41,
-                                            0x53, 0x59, 0x20, 0x58, 0x49, 0x56, 0x21, 0x9A,
-                                            0x1A, 0x4F, 0x59, 0x03, 0x00, 0x00, 0x00, 0x3A,
-                                            0x3A};
-                                            // "::Welcome to FINAL FANTASY XIV!OY"
-    static unsigned char MEM_PATTERN_TEST[] = "";
-    int sigsize = sizeof(MEM_PATTERN_CHATLOG)/sizeof(MEM_PATTERN_CHATLOG[0]);
+    kern_return_t kret;
+    static unsigned char MEM_PATTERN_CHATLOG[] = "\xe8****\x85\xc0\x74\x0e\x48\x8b\x0d****\x33\xd2\xe8****\x48\x8b\x0d";
+    int sigsize = strlen(MEM_PATTERN_CHATLOG);
 
     unsigned int size = 0xffff3000; // size of memory to scan
 
-    int bytes_read = 0;
+    // TODO: Get base address of process (due to address-slide caused by ASLR)
+    // TODO: This doesn't work currently.
+    vm_map_offset_t vmoffset;
+    vm_map_size_t vmsize;
+    uint32_t nesting_depth = 0;
+    struct vm_region_submap_info_64 vbr;
+    mach_msg_type_number_t vbrcount = 16;
+
+    kret = mach_vm_region_recurse(task, &vmoffset, &vmsize, &nesting_depth,
+        (vm_region_recurse_info_t)&vbr, &vbrcount);
+    KERN_ERR_CHECK(kret, "mach_vm_region_recurse");
+    printf("vm offset is: 0x%x\n", vmoffset);
+    const unsigned int buf_offset = vmoffset;
+    const unsigned int buf_rewind = 0;
+    int bytes_read = 0+buf_offset;
     uint32_t sz;
     printf("Getting chatlog memory offset...\n");
     while (bytes_read <= size) {
         static uint8_t buffer[MEMSCAN_BUFFER_SIZE];
-        unsigned int address = /*0x0107E3F0+*/bytes_read;
+        unsigned int address = bytes_read;
         pointer_t buf_ptr;
 
-        // vm_read
-        //printf("\nStarting vm_read...\n");
-        kern_return_t kret = vm_read(task, address, MEMSCAN_BUFFER_SIZE, &buf_ptr, &sz);
+        kret = vm_read(task, address, MEMSCAN_BUFFER_SIZE, &buf_ptr, &sz);
         if (kret == 2) {
             bytes_read+=MEMSCAN_BUFFER_SIZE;
             continue;
@@ -62,27 +67,23 @@ int get_chatlog_offset(mach_port_t task) {
             return -1;
         }
 
-        //printf("Finished vm_read. buffer pointer: %d\n", buf_ptr);
         memset(buffer, 0, MEMSCAN_BUFFER_SIZE);
-        memcpy(buffer, (const void *)buf_ptr, MEMSCAN_BUFFER_SIZE); // why is this segfaulting?
-        vm_deallocate(task, buf_ptr, sz); // vm_read returns mallocd memory that needs to be freed
-        //printf("Finished memcpy.\n");
+        memcpy(buffer, (const void *)buf_ptr, MEMSCAN_BUFFER_SIZE);
+        vm_deallocate(task, buf_ptr, sz);
         unsigned int bufpos = 0;
-        printf("Reading 1MB memory at: %x\n", address);
         while (bufpos <= MEMSCAN_BUFFER_SIZE) {
             unsigned int sigstart = bufpos;
             unsigned int sigpos = 0;
-            // parse bytes
-            while (buffer[sigstart+sigpos] == (MEM_PATTERN_CHATLOG[sigpos] & 0xff)
-                || MEM_PATTERN_CHATLOG[sigpos] == 0xffff) {
-                printf("\x1B[32;1m%x\x1B[0m ", buffer[sigstart+sigpos]);
+            while (buffer[sigstart+sigpos] == MEM_PATTERN_CHATLOG[sigpos] ||
+                MEM_PATTERN_CHATLOG[sigpos] == MEMSCAN_PATTERN_WILDCARD) {
                 sigpos++;
-                if (sigpos == sigsize) {
-                    return (int)(bytes_read+bufpos);
+                if (sigpos >= sigsize) {
+                    printf("Found: ");
+                    for (int i=0; i<sigsize; i++) printf("0x%x ", buffer[bufpos+i]);
+                    printf("\n");
+                    return (int)(bytes_read+bufpos-buf_rewind);
                 }
             }
-            if (sigpos > 0)
-                printf("\nPattern incomplete!\n");
 
             printf("\33[2K\r\x1B[33;1mSearching...\x1B[0m");
             bufpos++;
@@ -93,21 +94,28 @@ int get_chatlog_offset(mach_port_t task) {
     return -1;
 }
 
-#define CHATLOG_POINTER         (0x2CA90E58)
-#define CHATLOG_READ_SIZE       (0x00100000)
-void extract_chatlog_from_static_offset(mach_port_t task) {
+#define CHATLOG_POINTER         (0x2CA90E58) // incorrect for stormblood
+#define CHATLOG_READ_SIZE       (0x01000000)
+void dump_memory_from_offset(mach_port_t task, uint64_t offset) {
     static uint8_t buffer[CHATLOG_READ_SIZE];
     uint32_t sz;
     pointer_t buf_ptr;
-    kern_return_t kret = vm_read(task, CHATLOG_POINTER, CHATLOG_READ_SIZE, &buf_ptr, &sz);
+    kern_return_t kret = vm_read(task, offset, CHATLOG_READ_SIZE, &buf_ptr, &sz);
     KERN_ERR_CHECK(kret, "vm_read");
 
-    printf("Finished vm_read. buffer pointer: %d\n", buf_ptr);
+    printf("Finished vm_read.\n", buf_ptr);
     memset(buffer, 0, CHATLOG_READ_SIZE);
     memcpy(buffer, (const void *)buf_ptr, CHATLOG_READ_SIZE);
     vm_deallocate(task, buf_ptr, sz);
 
-    for (int i=0; i<sz; i++) printf("%c", (char)buffer[i]);
+    // for (int i=0; i<sz; i++) printf("%c", (char)buffer[i]);
+    // Write to file
+    FILE *fp;
+    fp = fopen("./memdump.hex", "wb");
+    if (fp)
+        fwrite(buffer, sizeof(uint8_t), sz, fp);
+
+    fclose(fp);
 }
 
 /**
@@ -152,12 +160,13 @@ int main() {
         (thread_state_t)&state, &state_count);
     KERN_ERR_CHECK(kret, "thread_get_state");
 
-    int chatlog_addr = get_chatlog_offset(task);
+    unsigned int chatlog_addr = get_chatlog_offset(task);
+    // unsigned int chatlog_addr = 0x368071cul;
 
     printf("\nFFXIV (%d) is running %d threads.\n", pid_ffxiv, thread_count);
-    printf("  -> CHATLOG at %d\n", chatlog_addr);
+    printf("  -> CHATLOG at 0x%x\n", chatlog_addr);
 
-    //extract_chatlog_from_static_offset(task);
+    dump_memory_from_offset(task, chatlog_addr);
 
     return 0;
 }
