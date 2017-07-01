@@ -46,6 +46,7 @@ function getPcapFilterFromPid(pid) {
 // pcap
 const pcap = require('pcap2')
 const tcpTracker = new pcap.TCPTracker()
+const PacketParser = require('./PacketParser')
 
 getFfxivPid()
 .then(res => {
@@ -64,9 +65,12 @@ getFfxivPid()
         const { dst_name, src_name } = session
         console.log(`Begin TCP session ${dst_name}->${src_name}`)
 
+        const parser = new PacketParser()
+
         session.on('data recv', (session, data) => {
             const { dst_name, src_name } = session
             console.log(`${dst_name}->${src_name}:${data}`)
+            parser.feed(Buffer.from(data))
         })
 
         session.on('end', session => {
