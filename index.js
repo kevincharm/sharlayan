@@ -58,6 +58,7 @@ getFfxivPid()
     // const filter = res
     // const filter = 'ip proto \\tcp and dst host 192.168.1.1 and (dst port 59186 or dst port 59187)'
     const filter = 'ip proto \\tcp and host 124.150.157.27 and (port 54992 or port 59186 or port 59187)'
+    // TODO: Use the above filter format, figure out which direction we need and fix filter generator
     console.log(`pcap filter: ${filter}`)
     const pcapSession = new pcap.Session('en0', { filter })
 
