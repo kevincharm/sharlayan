@@ -1,0 +1,23 @@
+{
+  "name": "sharlayan",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "sudo node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hellstad/sharlayan.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/hellstad/sharlayan/issues"
+  },
+  "homepage": "https://github.com/hellstad/sharlayan#readme",
+  "dependencies": {
+    "pcap2": "^3.0.4"
+  }
+}
