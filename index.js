@@ -39,7 +39,10 @@ function getPcapFilterFromPid(pid) {
                 pcapFilter += `port ${port}`
             })
             pcapFilter += ')'
-            resolve(pcapFilter)
+            resolve({
+                ports: ports,
+                filter: pcapFilter
+            })
         })
     })
 }
@@ -109,7 +112,7 @@ function onTcpPacket(session, data) {
     const sup = superPacket.parse(data)
     // debug
     console.log('---')
-    console.log(`${dst_name}->${src_name}`)
+    console.log(`${src_name}->${dst_name}`)
     console.log(`Buffer:${data.toString('hex')}`)
     console.log(`Text:${data}`)
     console.log(prettify(sup))
@@ -141,7 +144,7 @@ getFfxivPid()
     return getPcapFilterFromPid(pid)
 })
 .then(res => {
-    const filter = res
+    const { ports, filter } = res
     // const filter = 'ip proto \\tcp and dst host 192.168.1.1 and (dst port 59186 or dst port 59187)'
     // const filter = 'ip proto \\tcp and (port 58465 or port 58464)'
     // TODO: Use the above filter format, figure out which direction we need and fix filter generator
@@ -150,7 +153,7 @@ getFfxivPid()
 
     tcpTracker.on('session', session => {
         const { dst_name, src_name } = session
-        console.log(`Begin TCP session ${dst_name}->${src_name}`)
+        console.log(`Begin TCP session ${src_name}->${dst_name}`)
 
         session.on('data recv', onTcpPacket)
 
