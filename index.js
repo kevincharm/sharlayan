@@ -132,14 +132,15 @@ function onTcpPacket(session, data) {
     }
     */
     const subPackets = []
-    let subLength = sup.data.length
+    let sub = subPacket.parse(sup.data)
+    subPackets.push(prettify(sub))
+    let subLength = sup.data.length - sub.length
     while (subLength > 0) {
-        const sub = subPacket.parse(sup.data)
+        sub = subPacket.parse(sub.nextPacket)
         subPackets.push(prettify(sub))
-        if (sub.nextPacket.length === subLength)
-            break
-        subLength = sub.nextPacket.length
+        subLength -= sub.length
     }
+
     console.log('Subpackets:')
     console.log(subPackets)
     console.log('---\n')
