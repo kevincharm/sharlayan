@@ -53,10 +53,6 @@ const tcpTracker = new pcap.TCPTracker()
 const Parser = require('binary-parser').Parser
 const zlib = require('zlib')
 
-const packetTypes = {
-    0x1ac: 'position(?)'
-}
-
 const superPacket = new Parser()
     .uint16le('type') // 0:1, end at 2
     .skip(14)
@@ -75,9 +71,21 @@ const superPacket = new Parser()
         }
     })
 
+// For subPackets
+const packetTypes = {
+    0x0: 'Position/control (from server)',
+    0x1ac: 'Position/control (from client)',
+    0x355: 'Frontlines player message',
+    0x354: 'Frontlines summary message',
+    0x2df: 'Wolves\' Den player+summary message',
+    0x2de: 'Duty finder message'
+}
+
 const subPacket = new Parser()
     .uint32le('length')
-    .skip(10) // don't know
+    .uint32le('u64_1_lsb') // don't know
+    .uint32le('u64_1_msb') // don't know
+    .uint16le('u16_1') // don't know
     .uint16le('type') // seems to be some message type
     .buffer('data', {
         length: function () {
@@ -98,7 +106,7 @@ function prettify(pkt) {
 
         const packetType = packetTypes[val]
         if (key === 'type' && !!packetType)
-            hexed.parsedType = packetType
+            hexed[key] = `${packetType} (${val})`
     })
     if (hexed.timestampLsb && hexed.timestampMsb) {
         // TODO: Handle uint64 timestamps
