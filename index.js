@@ -33,11 +33,12 @@ function getPcapFilterFromPid(pid) {
                 ports.push(portsMatch[1])
                 // portsMatch[2] is dest/server port if we ever need it
             })
-            let pcapFilter = ''
+            let pcapFilter = 'ip proto \\tcp and ('
             ports.forEach((port, i) => {
-                if (i !== 0) pcapFilter += ' and '
-                pcapFilter += `tcp port ${port}`
+                if (i !== 0) pcapFilter += ' or '
+                pcapFilter += `port ${port}`
             })
+            pcapFilter += ')'
             resolve(pcapFilter)
         })
     })
@@ -140,9 +141,9 @@ getFfxivPid()
     return getPcapFilterFromPid(pid)
 })
 .then(res => {
-    // const filter = res
+    const filter = res
     // const filter = 'ip proto \\tcp and dst host 192.168.1.1 and (dst port 59186 or dst port 59187)'
-    const filter = 'ip proto \\tcp and host 124.150.157.27 and (port 54992 or port 59186 or port 59187)'
+    // const filter = 'ip proto \\tcp and (port 58465 or port 58464)'
     // TODO: Use the above filter format, figure out which direction we need and fix filter generator
     console.log(`pcap filter: ${filter}`)
     const pcapSession = new pcap.Session('en0', { filter })
