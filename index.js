@@ -114,7 +114,7 @@ function onTcpPacket(session, data) {
     while (processed < data.length) {
         const { dst_name, src_name } = session
         const sup = superPacket.parse(data)
-        processed -= sup.length
+        processed += sup.length
         // debug
         const dstPortRe = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\:(\d+)/
         const dstPort = dst_name.match(dstPortRe)
