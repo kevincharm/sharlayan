@@ -66,7 +66,9 @@ const superPacket = new Parser()
     .skip(4) // 34+5
     .uint16le('typemod') // 39:40
     .buffer('data', {
-        readUntil: 'eof'
+        length: function () {
+            return this.length-40
+        }
     })
 
 const subPacket = new Parser()
@@ -111,14 +113,14 @@ function onTcpPacket(session, data) {
     const { dst_name, src_name } = session
     const sup = superPacket.parse(data)
     // debug
-    console.log('---')
-    console.log(`${src_name}->${dst_name}`)
     const dstPortRe = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\:(\d+)/
     const dstPort = dst_name.match(dstPortRe)
     if (!(dstPort && this.ports.find(p => p.toString() === dstPort[1]))) { // TODO: get rid of `this`
         console.log('\x1B[31;1mNot interested in this packet: wrong direction.\x1B[0m')
         return
     }
+    console.log('---')
+    console.log(`${src_name}->${dst_name}`)
     console.log(`Buffer:${data.toString('hex')}`)
     console.log(`Text:${data}`)
     console.log(prettify(sup))
