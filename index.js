@@ -113,15 +113,23 @@ function onTcpPacket(session, data) {
     let processed = 0
     while (processed < data.length) {
         const { dst_name, src_name } = session
-        const sup = superPacket.parse(data)
+        const sup = superPacket.parse(Buffer.from(data, processed))
         processed += sup.length
         // debug
-        const dstPortRe = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\:(\d+)/
-        const dstPort = dst_name.match(dstPortRe)
-        if (!(dstPort && this.ports.find(p => p.toString() === dstPort[1]))) { // TODO: get rid of `this`
-            console.log('\x1B[31;1mNot interested in this packet: wrong direction.\x1B[0m')
-            // return
+        const dstPort = dst_name.split(':')[1]
+        let matched = false
+        for (let i=0; i<this.ports.length; i++) {
+            const port = this.ports[i]
+            if (port == dstPort) {
+                matched = true
+                break
+            }
         }
+        // WHY IS THIS BACKWARDS???????
+        if (matched) {
+            return
+        }
+
         console.log('---')
         console.log(`${src_name}->${dst_name}`)
         console.log(`Buffer:${data.toString('hex')}`)
@@ -144,7 +152,11 @@ function onTcpPacket(session, data) {
         }
 
         console.log('Subpackets:')
-        console.log(subPackets)
+        subPackets.forEach(s => {
+            console.log(`[s]Buffer:${s.data.toString('hex')}`)
+            console.log(`[s]Text:${s.data.toString('utf8')}`)
+            console.log(s)
+        })
         console.log('---\n')
     }
 }
