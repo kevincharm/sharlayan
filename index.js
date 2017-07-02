@@ -110,40 +110,43 @@ function unzlib(buf) {
 }
 
 function onTcpPacket(session, data) {
-    const { dst_name, src_name } = session
-    const sup = superPacket.parse(data)
-    // debug
-    const dstPortRe = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\:(\d+)/
-    const dstPort = dst_name.match(dstPortRe)
-    if (!(dstPort && this.ports.find(p => p.toString() === dstPort[1]))) { // TODO: get rid of `this`
-        console.log('\x1B[31;1mNot interested in this packet: wrong direction.\x1B[0m')
-        return
-    }
-    console.log('---')
-    console.log(`${src_name}->${dst_name}`)
-    console.log(`Buffer:${data.toString('hex')}`)
-    console.log(`Text:${data}`)
-    console.log(prettify(sup))
+    let processed = 0
+    while (processed < data.length) {
+        const { dst_name, src_name } = session
+        const sup = superPacket.parse(data)
+        processed -= sup.length
+        // debug
+        const dstPortRe = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\:(\d+)/
+        const dstPort = dst_name.match(dstPortRe)
+        if (!(dstPort && this.ports.find(p => p.toString() === dstPort[1]))) { // TODO: get rid of `this`
+            console.log('\x1B[31;1mNot interested in this packet: wrong direction.\x1B[0m')
+            // return
+        }
+        console.log('---')
+        console.log(`${src_name}->${dst_name}`)
+        console.log(`Buffer:${data.toString('hex')}`)
+        console.log(`Text:${data}`)
+        console.log(prettify(sup))
 
-    // parse each embedded subpacket
-    /*
-    if (sup.zlib) {
-        sup.data = unzlib(sup.data)
-    }
-    */
-    const subPackets = []
-    let sub = subPacket.parse(sup.data)
-    subPackets.push(prettify(sub))
-    let subLength = sup.data.length - sub.length
-    while (subLength > 0) {
-        sub = subPacket.parse(sub.nextPacket)
+        // parse each embedded subpacket
+        if (sup.zlib) {
+            sup.data = unzlib(sup.data)
+        }
+
+        const subPackets = []
+        let sub = subPacket.parse(sup.data)
         subPackets.push(prettify(sub))
-        subLength -= sub.length
-    }
+        let subLength = sup.data.length - sub.length
+        while (subLength > 0) {
+            sub = subPacket.parse(sub.nextPacket)
+            subPackets.push(prettify(sub))
+            subLength -= sub.length
+        }
 
-    console.log('Subpackets:')
-    console.log(subPackets)
-    console.log('---\n')
+        console.log('Subpackets:')
+        console.log(subPackets)
+        console.log('---\n')
+    }
 }
 
 getFfxivPid()
