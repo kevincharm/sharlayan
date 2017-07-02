@@ -46,7 +46,34 @@ function getPcapFilterFromPid(pid) {
 // pcap
 const pcap = require('pcap2')
 const tcpTracker = new pcap.TCPTracker()
-const PacketParser = require('./PacketParser')
+const Parser = require('binary-parser').Parser
+
+const ffxivPacket = new Parser()
+    .uint16le('type') // 0:1
+    .skip(23)
+    .uint32le('length') // 24:27
+    .skip(3)
+    .uint16le('blocklen') // 30:31
+    .skip(2)
+    .uint8('zlib') // 33
+    .skip(6)
+    .uint16le('typemod') // 39:40
+    .buffer('data', {
+        length: function () {
+            return this.length
+        }
+    })
+
+function hexise(pkt) {
+    const hexed = Object.assign({}, pkt)
+    Object.keys(hexed).forEach(key => {
+        const val = hexed[key]
+        if (typeof val === 'number') {
+            hexed[key] = `0x${val.toString(16)}`
+        }
+    })
+    return hexed
+}
 
 getFfxivPid()
 .then(res => {
@@ -66,12 +93,13 @@ getFfxivPid()
         const { dst_name, src_name } = session
         console.log(`Begin TCP session ${dst_name}->${src_name}`)
 
-        const parser = new PacketParser()
-
         session.on('data recv', (session, data) => {
             const { dst_name, src_name } = session
-            console.log(`${dst_name}->${src_name}:${data}`)
-            parser.feed(Buffer.from(data))
+            console.log(`${dst_name}->${src_name}`)
+            console.log(`Buffer:${data.toString('hex')}`)
+            console.log(`Text:${data}`)
+            console.log(hexise(ffxivPacket.parse(data)))
+            console.log('\n')
         })
 
         session.on('end', session => {
