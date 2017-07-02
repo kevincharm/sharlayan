@@ -57,8 +57,9 @@ const superPacket = new Parser()
     .uint32le('length') // 24:27, end at 28
     .skip(2) // 28+2 = 30
     .uint16le('subpackets') // 30:31, end at 32
+    .skip(1) // wtf is this byte
     .uint8('zlib') // 33
-    .skip(5) // 34+5
+    .skip(4) // 34+5
     .uint16le('typemod') // 39:40
     .buffer('data', {
         readUntil: 'eof'
@@ -66,9 +67,11 @@ const superPacket = new Parser()
 
 const subPacket = new Parser()
     .uint32le('length')
+    .skip(10) // don't know
+    .uint16le('type') // seems to be some message type
     .buffer('data', {
         length: function () {
-            return this.length - 4
+            return this.length-4-10-2
         }
     })
     .buffer('nextPacket', {
@@ -120,7 +123,7 @@ function onTcpPacket(session, data) {
     let subLength = sup.data.length
     while (subLength > 0) {
         const sub = subPacket.parse(sup.data)
-        subPackets.push(sub)
+        subPackets.push(prettify(sub))
         if (sub.nextPacket.length === subLength)
             break
         subLength = sub.nextPacket.length
