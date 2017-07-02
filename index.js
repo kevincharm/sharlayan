@@ -54,13 +54,7 @@ const Parser = require('binary-parser').Parser
 const zlib = require('zlib')
 
 const superPacket = new Parser()
-    .uint16le('type', {
-        assert: function () {
-            // this is a magic number. Can be 0x0000 as well
-            // which is a lot more common
-            return this.type === 0x5252
-        }
-    }) // 0:1, end at 2
+    .uint16le('type') // 0:1, end at 2
     .skip(14)
     .uint32le('timestampLsb')
     .uint32le('timestampMsb')
