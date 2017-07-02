@@ -47,21 +47,30 @@ function getPcapFilterFromPid(pid) {
 const pcap = require('pcap2')
 const tcpTracker = new pcap.TCPTracker()
 const Parser = require('binary-parser').Parser
+const zlib = require('zlib')
 
-const ffxivPacket = new Parser()
+const superPacket = new Parser()
     .uint16le('type') // 0:1, end at 2
     .skip(22) // 2+22 = 24
     .uint32le('length') // 24:27, end at 28
     .skip(2) // 28+2 = 30
-    .uint16le('blocklen') // 30:31, end at 32
-    .skip(1) // 32+1 = 33
+    .uint16le('subpackets') // 30:31, end at 32
     .uint8('zlib') // 33
     .skip(5) // 34+5
     .uint16le('typemod') // 39:40
     .buffer('data', {
+        readUntil: 'eof'
+    })
+
+const subPacket = new Parser()
+    .uint32le('length')
+    .buffer('data', {
         length: function () {
-            return this.length
+            return this.length - 4
         }
+    })
+    .buffer('nextPacket', {
+        readUntil: 'eof'
     })
 
 function hexise(pkt) {
@@ -73,6 +82,45 @@ function hexise(pkt) {
         }
     })
     return hexed
+}
+
+function unzlib(buf) {
+    try {
+        const unzipped = zlib.unzipSync(buf)
+        console.log('\x1B[32;1mSuccessful unzip.\x1B[0m')
+        return unzipped
+    } catch (err) {
+        console.log('\x1B[31;1mFailed to unzip!\x1B[0m')
+        return buf
+    }
+}
+
+function onTcpPacket(session, data) {
+    const { dst_name, src_name } = session
+    const sup = superPacket.parse(data)
+    // debug
+    console.log('---')
+    console.log(`${dst_name}->${src_name}`)
+    console.log(`Buffer:${data.toString('hex')}`)
+    console.log(`Text:${data}`)
+    console.log(hexise(sup))
+
+    // parse each embedded subpacket
+    if (sup.zlib) {
+        sup.data = unzlib(sup.data)
+    }
+    const subPackets = []
+    let subLength = sup.data.length
+    while (subLength > 0) {
+        const sub = subPacket.parse(sup.data)
+        subPackets.push(sub)
+        if (sub.nextPacket.length === subLength)
+            break
+        subLength = sub.nextPacket.length
+    }
+    console.log('Subpackets:')
+    console.log(subPackets)
+    console.log('---\n')
 }
 
 getFfxivPid()
@@ -93,14 +141,7 @@ getFfxivPid()
         const { dst_name, src_name } = session
         console.log(`Begin TCP session ${dst_name}->${src_name}`)
 
-        session.on('data recv', (session, data) => {
-            const { dst_name, src_name } = session
-            console.log(`${dst_name}->${src_name}`)
-            console.log(`Buffer:${data.toString('hex')}`)
-            console.log(`Text:${data}`)
-            console.log(hexise(ffxivPacket.parse(data)))
-            console.log('\n')
-        })
+        session.on('data recv', onTcpPacket)
 
         session.on('end', session => {
             console.log('End TCP session')
