@@ -51,7 +51,9 @@ const zlib = require('zlib')
 
 const superPacket = new Parser()
     .uint16le('type') // 0:1, end at 2
-    .skip(22) // 2+22 = 24
+    .skip(14)
+    .uint32le('timestampLsb')
+    .uint32le('timestampMsb')
     .uint32le('length') // 24:27, end at 28
     .skip(2) // 28+2 = 30
     .uint16le('subpackets') // 30:31, end at 32
@@ -73,14 +75,17 @@ const subPacket = new Parser()
         readUntil: 'eof'
     })
 
-function hexise(pkt) {
+function prettify(pkt) {
     const hexed = Object.assign({}, pkt)
     Object.keys(hexed).forEach(key => {
         const val = hexed[key]
-        if (typeof val === 'number') {
+
+        if (typeof val === 'number')
             hexed[key] = `0x${val.toString(16)}`
-        }
     })
+    if (hexed.timestampLsb && hexed.timestampMsb) {
+        // TODO: Handle uint64 timestamps
+    }
     return hexed
 }
 
@@ -103,7 +108,7 @@ function onTcpPacket(session, data) {
     console.log(`${dst_name}->${src_name}`)
     console.log(`Buffer:${data.toString('hex')}`)
     console.log(`Text:${data}`)
-    console.log(hexise(sup))
+    console.log(prettify(sup))
 
     // parse each embedded subpacket
     /*
