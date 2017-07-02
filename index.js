@@ -49,14 +49,14 @@ const tcpTracker = new pcap.TCPTracker()
 const Parser = require('binary-parser').Parser
 
 const ffxivPacket = new Parser()
-    .uint16le('type') // 0:1
-    .skip(23)
-    .uint32le('length') // 24:27
-    .skip(3)
-    .uint16le('blocklen') // 30:31
-    .skip(2)
+    .uint16le('type') // 0:1, end at 2
+    .skip(22) // 2+22 = 24
+    .uint32le('length') // 24:27, end at 28
+    .skip(2) // 28+2 = 30
+    .uint16le('blocklen') // 30:31, end at 32
+    .skip(1) // 32+1 = 33
     .uint8('zlib') // 33
-    .skip(6)
+    .skip(5) // 34+5
     .uint16le('typemod') // 39:40
     .buffer('data', {
         length: function () {
