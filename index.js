@@ -53,6 +53,10 @@ const tcpTracker = new pcap.TCPTracker()
 const Parser = require('binary-parser').Parser
 const zlib = require('zlib')
 
+const packetTypes = {
+    0x1ac: 'position(?)'
+}
+
 const superPacket = new Parser()
     .uint16le('type') // 0:1, end at 2
     .skip(14)
@@ -91,6 +95,10 @@ function prettify(pkt) {
 
         if (typeof val === 'number')
             hexed[key] = `0x${val.toString(16)}`
+
+        const packetType = packetTypes[val]
+        if (key === 'type' && !!packetType)
+            hexed.parsedType = packetType
     })
     if (hexed.timestampLsb && hexed.timestampMsb) {
         // TODO: Handle uint64 timestamps
