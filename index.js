@@ -78,7 +78,9 @@ const packetTypes = {
     0x355: 'Frontlines player message',
     0x354: 'Frontlines summary message',
     0x2df: 'Wolves\' Den player+summary message',
-    0x2de: 'Duty finder message'
+    0x2de: 'Duty finder message',
+    0x85bf: 'Zone data?',
+    0x3fa3: 'Damage info?'
 }
 
 const subPacket = new Parser()
@@ -106,7 +108,7 @@ function prettify(pkt) {
 
         const packetType = packetTypes[val]
         if (key === 'type' && !!packetType)
-            hexed[key] = `${packetType} (${val})`
+            hexed[key] = `${packetType} (${hexed[key]})`
     })
     if (hexed.timestampLsb && hexed.timestampMsb) {
         // TODO: Handle uint64 timestamps
@@ -127,6 +129,8 @@ function unzlib(buf) {
 
 function onTcpPacket(session, data) {
     let processed = 0
+    // TODO: Handle TCP packets that are split up
+    // Probably need to bring back in the PacketParser class.
     while (processed < data.length) {
         const { dst_name, src_name } = session
         let sup
@@ -149,6 +153,7 @@ function onTcpPacket(session, data) {
         }
         // WHY IS THIS BACKWARDS???????
         if (matched) {
+            // I don't think we can rely on the src/dst of TCP packet.
             // return
         }
 
