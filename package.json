@@ -18,6 +18,10 @@
   },
   "homepage": "https://github.com/hellstad/sharlayan#readme",
   "dependencies": {
+    "binary-parser": "^1.1.5",
     "pcap2": "^3.0.4"
+  },
+  "devDependencies": {
+    "nodemon": "^1.11.0"
   }
 }
