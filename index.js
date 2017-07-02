@@ -106,9 +106,11 @@ function onTcpPacket(session, data) {
     console.log(hexise(sup))
 
     // parse each embedded subpacket
+    /*
     if (sup.zlib) {
         sup.data = unzlib(sup.data)
     }
+    */
     const subPackets = []
     let subLength = sup.data.length
     while (subLength > 0) {
