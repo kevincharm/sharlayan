@@ -25,15 +25,15 @@ function getPcapFilterFromPid(pid) {
             if (stderr) return reject(stderr)
 
             const lines = stdout.split('\n')
-            const portsRe = /TCP\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\:(\d+)\-\>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\:(\d+)/
+            const portsRe = /TCP\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\:(\d+)\-\>(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\:(\d+)/
             let ports = []
             lines.forEach(line => {
                 const portsMatch = line.match(portsRe)
                 if (!portsMatch) return
-                ports.push(portsMatch[1])
+                ports.push(portsMatch[2])
                 // portsMatch[2] is dest/server port if we ever need it
             })
-            let pcapFilter = 'ip proto \\tcp and ('
+            let pcapFilter = `ip proto \\tcp and (`
             ports.forEach((port, i) => {
                 if (i !== 0) pcapFilter += ' or '
                 pcapFilter += `port ${port}`
@@ -113,6 +113,12 @@ function onTcpPacket(session, data) {
     // debug
     console.log('---')
     console.log(`${src_name}->${dst_name}`)
+    const dstPortRe = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\:(\d+)/
+    const dstPort = dst_name.match(dstPortRe)
+    if (!(dstPort && this.ports.find(p => p.toString() === dstPort[1]))) { // TODO: get rid of `this`
+        console.log('\x1B[31;1mNot interested in this packet: wrong direction.\x1B[0m')
+        return
+    }
     console.log(`Buffer:${data.toString('hex')}`)
     console.log(`Text:${data}`)
     console.log(prettify(sup))
@@ -155,7 +161,7 @@ getFfxivPid()
         const { dst_name, src_name } = session
         console.log(`Begin TCP session ${src_name}->${dst_name}`)
 
-        session.on('data recv', onTcpPacket)
+        session.on('data recv', onTcpPacket.bind({ ports }))
 
         session.on('end', session => {
             console.log('End TCP session')
