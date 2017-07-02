@@ -149,7 +149,7 @@ function onTcpPacket(session, data) {
         }
         // WHY IS THIS BACKWARDS???????
         if (matched) {
-            return
+            // return
         }
 
         console.log('---')
