@@ -80,8 +80,8 @@ const packetTypes = {
     0x2df: 'Wolves\' Den player+summary message',
     0x2de: 'Duty finder message',
     0x85bf: 'Zone data?',
-    0x3fa3: 'Damage info?'
-    0x3f9d: 'Mount related???'
+    0x3fa3: 'Damage info?',
+    0x3f9d: 'Mount related???',
     0x3b34: 'Mount related???'
 }
 
