@@ -7,10 +7,9 @@ function getFfxivPid() {
             if (err) return reject(err)
             if (stderr) return reject(stderr)
 
-            // TODO: error prone
-            const [pidMatch] = stdout.match(/^(\d+)\s/)
-            if ([pidMatch]) {
-                resolve([pidMatch][0])
+            const [pidMatch] = stdout.match(/^(\d+)\s/) || []
+            if (pidMatch) {
+                resolve(pidMatch)
             } else {
                 reject(new Error('Process not found!'))
             }
