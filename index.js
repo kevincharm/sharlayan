@@ -25,13 +25,35 @@ function openPcap(opts) {
 }
 */
 
-const cap = require('cap')
-const { getFfxivPcapFilter } = require('./lib/process')
+const { Cap, decoders } = require('cap')
+const { PROTOCOL } = decoders
+const { getFfxivProcessInfo } = require('./lib/process')
 const { onTcpPacket } = require('./lib/packet')
 
-getFfxivPcapFilter()
+function openPcap(opts) {
+    const { ip, ports, filter } = opts
+    const pcap = new Cap()
+    const device = Cap.findDevice(ip) // TODO: will fail on macOS
+    const bufsiz = 10*1024*1024
+    const buffer = new Buffer(Math.pow(2, 16)-1)
+    const linkType = pcap.open(device, filter, bufsiz, buffer)
+    pcap.on('packet', (nbytes, trunc) => {
+        if (linkType !== 'ETHERNET') return
+
+        const ether = decoders.Ethernet(buffer)
+        if (ether.info.type !== PROTOCOL.ETHERNET.IPV4) return // needed?
+
+        // Well, it has to be TCP at this point. The filter says so.
+        const len = ether.info.totallen - ether.hdrlen
+        t = decoders.TCP(buffer, ether.offset)
+        console.log(t.info)
+    })
+}
+
+getFfxivProcessInfo()
 .then(res => {
     console.log(res)
+    openPcap(res)
 })
 .catch(err => {
     console.error(err)
