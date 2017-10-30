@@ -1,19 +1,9 @@
+// old
+/*
 const pcap = require('pcap2')
 const tcpTracker = new pcap.TCPTracker()
-const {
-    getFfxivPid,
-    getPcapFilterFromPid
-} = require('./lib/process')
-const { onTcpPacket } = require('./lib/packet')
-
-getFfxivPid()
-.then(res => {
-    const pid = res
-    console.log(`FFXIV running as PID ${pid}`)
-    return getPcapFilterFromPid(pid)
-})
-.then(res => {
-    const { ports, filter } = res
+function openPcap(opts) {
+    const { ports, filter } = opts
     console.log(`pcap filter: ${filter}`)
     const pcapSession = new pcap.Session('en0', { filter })
 
@@ -32,6 +22,16 @@ getFfxivPid()
         const packet = pcap.decode.packet(raw)
         tcpTracker.track_packet(packet)
     })
+}
+*/
+
+const cap = require('cap')
+const { getFfxivPcapFilter } = require('./lib/process')
+const { onTcpPacket } = require('./lib/packet')
+
+getFfxivPcapFilter()
+.then(res => {
+    console.log(res)
 })
 .catch(err => {
     console.error(err)
