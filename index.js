@@ -43,10 +43,23 @@ function openPcap(opts) {
         const ether = decoders.Ethernet(buffer)
         if (ether.info.type !== PROTOCOL.ETHERNET.IPV4) return // needed?
 
-        // Well, it has to be TCP at this point. The filter says so.
-        const len = ether.info.totallen - ether.hdrlen
-        t = decoders.TCP(buffer, ether.offset)
-        console.log(t.info)
+        const ipv4 = decoders.IPV4(buffer, ether.offset)
+        if (ipv4.info.protocol !== PROTOCOL.IP.TCP) return
+
+        const tcp = decoders.TCP(buffer, ipv4.offset)
+        const tcpLen = ipv4.info.totallen - ipv4.hdrlen - tcp.hdrlen
+        const packet = buffer.slice(tcp.offset, tcp.offset + tcpLen)
+
+        if (ports.find(p => p === tcp.info.srcport.toString())) {
+            console.log('incoming')
+            console.log(ipv4.info, tcp.info)
+            console.log('---')
+            onTcpPacket(packet)
+        } else if (ports.find(p => p === tcp.info.dstport.toString())) {
+            console.log('outgoing')
+            console.log(ipv4.info, tcp.info)
+            console.log('---')
+        }
     })
 }
 
