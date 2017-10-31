@@ -11,6 +11,8 @@ function openPcap(opts) {
     const buffer = new Buffer(Math.pow(2, 16)-1)
     const linkType = pcap.open(device, filter, bufsiz, buffer)
     pcap.on('packet', (nbytes, trunc) => {
+        if (trunc) console.log('Warning: truncated TCP packet!')
+
         if (linkType !== 'ETHERNET') return
 
         const ether = decoders.Ethernet(buffer)
@@ -24,14 +26,13 @@ function openPcap(opts) {
         const packet = buffer.slice(tcp.offset, tcp.offset + tcpLen)
 
         if (ports.find(p => p === tcp.info.srcport.toString())) {
-            console.log('incoming')
-            console.log(ipv4.info, tcp.info)
-            console.log('---')
+            // console.log('incoming')
             onTcpPacket(packet)
+            // console.log('---')
         } else if (ports.find(p => p === tcp.info.dstport.toString())) {
-            console.log('outgoing')
-            console.log(ipv4.info, tcp.info)
-            console.log('---')
+            // console.log('outgoing')
+            // console.log('---')
+            // onTcpPacket(packet)
         }
     })
 }
