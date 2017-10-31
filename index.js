@@ -1,221 +1,45 @@
-// get ports
-const { exec } = require('child_process')
+const { Cap, decoders } = require('cap')
+const { PROTOCOL } = decoders
+const { getFfxivProcessInfo } = require('./lib/process')
+const { onTcpPacket } = require('./lib/packet')
 
-function getFfxivPid() {
-    return new Promise((resolve, reject) => {
-        exec('ps -A | grep \'ffxiv.exe\'', (err, stdout, stderr) => {
-            if (err) return reject(err)
-            if (stderr) return reject(stderr)
+function openPcap(opts) {
+    const { ip, ports, filter } = opts
+    const pcap = new Cap()
+    const device = Cap.findDevice(ip) // TODO: will fail on macOS
+    const bufsiz = 10*1024*1024
+    const buffer = new Buffer(Math.pow(2, 16)-1)
+    const linkType = pcap.open(device, filter, bufsiz, buffer)
+    pcap.on('packet', (nbytes, trunc) => {
+        if (linkType !== 'ETHERNET') return
 
-            // TODO: error prone
-            const [pidMatch] = stdout.match(/^(\d+)\s/)
-            if ([pidMatch]) {
-                resolve([pidMatch][0])
-            } else {
-                reject(new Error('Process not found!'))
-            }
-        })
+        const ether = decoders.Ethernet(buffer)
+        if (ether.info.type !== PROTOCOL.ETHERNET.IPV4) return // needed?
+
+        const ipv4 = decoders.IPV4(buffer, ether.offset)
+        if (ipv4.info.protocol !== PROTOCOL.IP.TCP) return
+
+        const tcp = decoders.TCP(buffer, ipv4.offset)
+        const tcpLen = ipv4.info.totallen - ipv4.hdrlen - tcp.hdrlen
+        const packet = buffer.slice(tcp.offset, tcp.offset + tcpLen)
+
+        if (ports.find(p => p === tcp.info.srcport.toString())) {
+            console.log('incoming')
+            console.log(ipv4.info, tcp.info)
+            console.log('---')
+            onTcpPacket(packet)
+        } else if (ports.find(p => p === tcp.info.dstport.toString())) {
+            console.log('outgoing')
+            console.log(ipv4.info, tcp.info)
+            console.log('---')
+        }
     })
 }
 
-function getPcapFilterFromPid(pid) {
-    return new Promise((resolve, reject) => {
-        exec(`lsof -p ${pid} | grep TCP`, (err, stdout, stderr) => {
-            if (err) return reject(err)
-            if (stderr) return reject(stderr)
-
-            const lines = stdout.split('\n')
-            const portsRe = /TCP\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\:(\d+)\-\>(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\:(\d+)/
-            let ports = []
-            lines.forEach(line => {
-                const portsMatch = line.match(portsRe)
-                if (!portsMatch) return
-                ports.push(portsMatch[2])
-                // portsMatch[2] is dest/server port if we ever need it
-            })
-            let pcapFilter = `ip proto \\tcp and (`
-            ports.forEach((port, i) => {
-                if (i !== 0) pcapFilter += ' or '
-                pcapFilter += `port ${port}`
-            })
-            pcapFilter += ')'
-            resolve({
-                ports: ports,
-                filter: pcapFilter
-            })
-        })
-    })
-}
-
-// pcap
-const pcap = require('pcap2')
-const tcpTracker = new pcap.TCPTracker()
-const Parser = require('binary-parser').Parser
-const zlib = require('zlib')
-
-const superPacket = new Parser()
-    .uint16le('type') // 0:1, end at 2
-    .skip(14)
-    .uint32le('timestampLsb')
-    .uint32le('timestampMsb')
-    .uint32le('length') // 24:27, end at 28
-    .skip(2) // 28+2 = 30
-    .uint16le('subpackets') // 30:31, end at 32
-    .skip(1) // wtf is this byte
-    .uint8('zlib') // 33
-    .skip(4) // 34+5
-    .uint16le('typemod') // 39:40
-    .buffer('data', {
-        length: function () {
-            return this.length-40
-        }
-    })
-
-// For subPackets
-const packetTypes = {
-    0x0: 'Position/control (from server)',
-    0x1ac: 'Position/control (from client)',
-    0x355: 'Frontlines player message',
-    0x354: 'Frontlines summary message',
-    0x2df: 'Wolves\' Den player+summary message',
-    0x2de: 'Duty finder message',
-    0x85bf: 'Zone data?',
-    0x3fa3: 'Damage info?',
-    0x3f9d: 'Mount related???',
-    0x3b34: 'Mount related???'
-}
-
-const subPacket = new Parser()
-    .uint32le('length')
-    .uint32le('u64_1_lsb') // don't know
-    .uint32le('u64_1_msb') // don't know
-    .uint16le('u16_1') // don't know
-    .uint16le('type') // seems to be some message type
-    .buffer('data', {
-        length: function () {
-            return this.length-4-10-2
-        }
-    })
-    .buffer('nextPacket', {
-        readUntil: 'eof'
-    })
-
-function prettify(pkt) {
-    const hexed = Object.assign({}, pkt)
-    Object.keys(hexed).forEach(key => {
-        const val = hexed[key]
-
-        if (typeof val === 'number')
-            hexed[key] = `0x${val.toString(16)}`
-
-        const packetType = packetTypes[val]
-        if (key === 'type' && !!packetType)
-            hexed[key] = `${packetType} (${hexed[key]})`
-    })
-    if (hexed.timestampLsb && hexed.timestampMsb) {
-        // TODO: Handle uint64 timestamps
-    }
-    return hexed
-}
-
-function unzlib(buf) {
-    try {
-        const unzipped = zlib.unzipSync(buf)
-        console.log('\x1B[32;1mSuccessful unzip.\x1B[0m')
-        return unzipped
-    } catch (err) {
-        console.log('\x1B[31;1mFailed to unzip!\x1B[0m')
-        return buf
-    }
-}
-
-function onTcpPacket(session, data) {
-    let processed = 0
-    // TODO: Handle TCP packets that are split up
-    // Probably need to bring back in the PacketParser class.
-    while (processed < data.length) {
-        const { dst_name, src_name } = session
-        let sup
-        try {
-            sup = superPacket.parse(Buffer.from(data, processed))
-        } catch (err) {
-            console.log('\x1B[31;1mParser assert.\x1B[0m')
-            break
-        }
-        processed += sup.length
-        // debug
-        const dstPort = dst_name.split(':')[1]
-        let matched = false
-        for (let i=0; i<this.ports.length; i++) {
-            const port = this.ports[i]
-            if (port == dstPort) {
-                matched = true
-                break
-            }
-        }
-        // WHY IS THIS BACKWARDS???????
-        if (matched) {
-            // I don't think we can rely on the src/dst of TCP packet.
-            // return
-        }
-
-        console.log('---')
-        console.log(`${src_name}->${dst_name}`)
-        console.log(`Buffer:${data.toString('hex')}`)
-        console.log(`Text:${data}`)
-        console.log(prettify(sup))
-
-        // parse each embedded subpacket
-        if (sup.zlib) {
-            sup.data = unzlib(sup.data)
-        }
-
-        const subPackets = []
-        let sub = subPacket.parse(sup.data)
-        subPackets.push(prettify(sub))
-        let subLength = sup.data.length - sub.length
-        while (subLength > 0) {
-            sub = subPacket.parse(sub.nextPacket)
-            subPackets.push(prettify(sub))
-            subLength -= sub.length
-        }
-
-        console.log('Subpackets:')
-        subPackets.forEach(s => {
-            console.log(`[s]Buffer:${s.data.toString('hex')}`)
-            console.log(`[s]Text:${s.data.toString('utf8')}`)
-            console.log(s)
-        })
-        console.log('---\n')
-    }
-}
-
-getFfxivPid()
+getFfxivProcessInfo()
 .then(res => {
-    const pid = res
-    console.log(`FFXIV running as PID ${pid}`)
-    return getPcapFilterFromPid(pid)
-})
-.then(res => {
-    const { ports, filter } = res
-    console.log(`pcap filter: ${filter}`)
-    const pcapSession = new pcap.Session('en0', { filter })
-
-    tcpTracker.on('session', session => {
-        const { dst_name, src_name } = session
-        console.log(`Begin TCP session ${src_name}->${dst_name}`)
-
-        session.on('data recv', onTcpPacket.bind({ ports }))
-
-        session.on('end', session => {
-            console.log('End TCP session')
-        })
-    })
-
-    pcapSession.on('packet', raw => {
-        const packet = pcap.decode.packet(raw)
-        tcpTracker.track_packet(packet)
-    })
+    console.log(res)
+    openPcap(res)
 })
 .catch(err => {
     console.error(err)

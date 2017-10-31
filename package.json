@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "sudo nodemon index.js"
+    "start": "nodemon index.js"
   },
   "repository": {
     "type": "git",
@@ -19,7 +19,8 @@
   "homepage": "https://github.com/hellstad/sharlayan#readme",
   "dependencies": {
     "binary-parser": "^1.1.5",
-    "pcap2": "^3.0.4"
+    "cap": "^0.1.2",
+    "tasklist": "^3.1.0"
   },
   "devDependencies": {
     "nodemon": "^1.11.0"
